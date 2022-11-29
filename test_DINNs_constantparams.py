@@ -37,7 +37,7 @@ covid_data = genfromtxt('sird.csv', delimiter=',') #in the form of [t,S,I,D,R] #
 
 
 class DINN(nn.Module):
-    def __init__(self, t, S_data, I_data, D_data, R_data): #[t,S,I,D,R]
+    def __init__(self, t, S_data, I_data, R_data, D_data): #[t,S,I,D,R]
         super(DINN, self).__init__()
         
         self.N = 59e6 #population size
@@ -50,9 +50,9 @@ class DINN(nn.Module):
         #for the compartments we just need to convert them into tensors
         self.S = torch.tensor(S_data)
         self.I = torch.tensor(I_data)
-        self.D = torch.tensor(D_data)
         self.R = torch.tensor(R_data)
-
+        self.D = torch.tensor(D_data)
+        
         self.losses = [] # here I saved the model's losses per epoch
 
         #setting the parameters
@@ -109,9 +109,9 @@ class DINN(nn.Module):
             
             # 扩大网络 50  70
             self.fc1=nn.Linear(1, 20) #takes 100 t's
-            self.fc2=nn.Linear(20, 20)
-            self.fc3=nn.Linear(20, 20)
-            self.fc4=nn.Linear(20, 20)
+            self.fc2=nn.Linear(20, 30)
+            self.fc3=nn.Linear(30, 50)
+            self.fc4=nn.Linear(50, 20)
             # self.fc5=nn.Linear(20, 20)
             # self.fc6=nn.Linear(20, 20)
             # self.fc7=nn.Linear(20, 20)
@@ -170,7 +170,7 @@ class DINN(nn.Module):
             f3_hat = R_hat_t - (self.gamma * I ) / (self.R_max - self.R_min)   
             f4_hat = D_hat_t - (self.mu * I) / (self.D_max - self.D_min)
      
-            return f1_hat, f2_hat, f3_hat, f4_hat, S_hat, I_hat, D_hat, R_hat
+            return f1_hat, f2_hat, f3_hat, f4_hat, S_hat, I_hat, R_hat, D_hat
 
 	
     def train(self, n_epochs):
@@ -181,25 +181,25 @@ class DINN(nn.Module):
             # lists to hold the output (maintain only the final epoch)
             S_pred_list = []
             I_pred_list = []
-            D_pred_list = []
             R_pred_list = []
+            D_pred_list = []
 
             # we pass the timesteps batch into net_f
-            f1, f2, f3, f4, S_pred, I_pred, D_pred, R_pred = self.net_f(self.t_batch) # net_f outputs f1_hat, f2_hat, f3_hat, f4_hat, S_hat, I_hat, D_hat, R_hat
+            f1, f2, f3, f4, S_pred, I_pred, R_pred, D_pred = self.net_f(self.t_batch) # net_f outputs f1_hat, f2_hat, f3_hat, f4_hat, S_hat, I_hat, D_hat, R_hat
             
             self.optimizer.zero_grad() #zero grad
             
             #append the values to plot later (note that we unnormalize them here for plotting)
             S_pred_list.append(self.S_min + (self.S_max - self.S_min) * S_pred)
             I_pred_list.append(self.I_min + (self.I_max - self.I_min) * I_pred)
-            D_pred_list.append(self.D_min + (self.D_max - self.D_min) * D_pred)
             R_pred_list.append(self.R_min + (self.R_max - self.R_min) * R_pred)
+            D_pred_list.append(self.D_min + (self.D_max - self.D_min) * D_pred)
 
             #calculate the loss --- MSE of the neural networks output and each compartment
             loss = (torch.mean(torch.square(self.S_hat - S_pred))+ 
                     torch.mean(torch.square(self.I_hat - I_pred))+
-                    torch.mean(torch.square(self.D_hat - D_pred))+
                     torch.mean(torch.square(self.R_hat - R_pred))+
+                    torch.mean(torch.square(self.D_hat - D_pred))+
                     torch.mean(torch.square(f1))+
                     torch.mean(torch.square(f2))+
                     torch.mean(torch.square(f3))+
@@ -222,11 +222,11 @@ class DINN(nn.Module):
 
                 print('#################################')                
 
-        return S_pred_list, I_pred_list, D_pred_list, R_pred_list
+        return S_pred_list, I_pred_list, R_pred_list, D_pred_list
 # time
 
 dinn = DINN(covid_data[0], covid_data[1], covid_data[2], covid_data[3], 
-            covid_data[4]) #in the form of [t,S,I,D,R]
+            covid_data[4]) #in the form of [t,S,I,R,D]
 
 learning_rate = 1e-6
 optimizer = optim.Adam(dinn.params, lr = learning_rate)
@@ -236,7 +236,7 @@ scheduler = torch.optim.lr_scheduler.CyclicLR(dinn.optimizer, base_lr=1e-5, max_
 
 dinn.scheduler = scheduler
 
-S_pred_list, I_pred_list, D_pred_list, R_pred_list = dinn.train(50000) #train
+S_pred_list, I_pred_list, R_pred_list, D_pred_list = dinn.train(50000) #train
 
 plt.plot(dinn.losses[0:], color = 'teal')
 plt.xlabel('Epochs')
@@ -246,17 +246,17 @@ fig = plt.figure(figsize=(12,12))
 ax = fig.add_subplot(111, facecolor='#dddddd', axisbelow=True)
 ax.set_facecolor('xkcd:white')
 
-ax.plot(covid_data[0], covid_data[1], 'pink', alpha=0.95, lw=2, label='Susceptible')
-ax.plot(covid_data[0], S_pred_list[0].detach().numpy(), 'red', alpha=0.9, lw=2, label='Susceptible Prediction', linestyle='dashed')
+ax.plot(covid_data[0], covid_data[1], 'blue', alpha=0.95, lw=2, label='Susceptible')
+ax.plot(covid_data[0], S_pred_list[0].detach().numpy(), 'blue', alpha=0.9, lw=2, label='Susceptible Prediction', linestyle='dashed')
 
-ax.plot(covid_data[0], covid_data[2], 'violet', alpha=0.95, lw=2, label='Infected')
-ax.plot(covid_data[0], I_pred_list[0].detach().numpy(), 'dodgerblue', alpha=0.9, lw=2, label='Infected Prediction', linestyle='dashed')
+ax.plot(covid_data[0], covid_data[2], 'red', alpha=0.95, lw=2, label='Infected')
+ax.plot(covid_data[0], I_pred_list[0].detach().numpy(), 'red', alpha=0.9, lw=2, label='Infected Prediction', linestyle='dashed')
 
-ax.plot(covid_data[0], covid_data[3], 'darkgreen', alpha=0.95, lw=2, label='Recovered')
-ax.plot(covid_data[0], D_pred_list[0].detach().numpy(), 'green', alpha=0.9, lw=2, label='Recovered Prediction', linestyle='dashed')
+ax.plot(covid_data[0], covid_data[3], 'green', alpha=0.95, lw=2, label='Recovered')
+ax.plot(covid_data[0], R_pred_list[0].detach().numpy(), 'green', alpha=0.9, lw=2, label='Recovered Prediction', linestyle='dashed')
 
-ax.plot(covid_data[0], covid_data[4], 'blue', alpha=0.95, lw=2, label='Death')
-ax.plot(covid_data[0], R_pred_list[0].detach().numpy(), 'teal', alpha=0.9, lw=2, label='Death Prediction', linestyle='dashed')
+ax.plot(covid_data[0], covid_data[4], 'black', alpha=0.95, lw=2, label='Death')
+ax.plot(covid_data[0], D_pred_list[0].detach().numpy(), 'black', alpha=0.9, lw=2, label='Death Prediction', linestyle='dashed')
 
 
 ax.set_xlabel('Time /days')
